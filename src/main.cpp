@@ -3,6 +3,7 @@
 #include <TinyPICO.h>
 
 #include "knob.h"
+#include "sense.h"
 
 // #define ENABLE_SERIAL
 
@@ -18,7 +19,8 @@
 
 #define SENSE_PIN (4)
 
-Bounce2::Button *sense = nullptr;
+// Bounce2::Button *sense = nullptr;
+Sense sense(1, SENSE_PIN);
 TinyPICO tp = TinyPICO();
 
 int motorMaxDutyCycle = (1 << MOTOR_PWM_BITS) - 1;
@@ -48,20 +50,21 @@ void setup() {
   ledcAttachPin(MOTOR_PWM_PIN, MOTOR_PWM_CHANNEL);
   ledcWrite(MOTOR_PWM_CHANNEL, 0);
 
-  sense = new Bounce2::Button();
-  sense->attach(SENSE_PIN, INPUT_PULLUP);
-  sense->interval(5);
-  sense->setPressedState(LOW);
+  pinMode(SENSE_PIN, INPUT);
+  // sense = new Bounce2::Button();
+  // sense->attach(SENSE_PIN, INPUT_PULLUP);
+  // sense->interval(500);
+  // sense->setPressedState(HIGH);
 
   tp.DotStar_SetPower(true);
   tp.DotStar_SetPixelColor(255, 0, 0);
   tp.DotStar_SetBrightness(126);
 }
 
-#define YEET_TIME 2000
+#define YEET_TIME 1500
 #define WAIT_TIME 1000
-#define RAMPUP_TIME 8000
-#define HOLD_TIME 8000
+#define RAMPUP_TIME 10000
+#define HOLD_TIME 5000
 #define DECLINE_TIME 10000
 
 #define YEET_POWER 40l
@@ -100,12 +103,11 @@ void loop() {
   digitalWrite(MOTOR_DIR_PIN, LOW);
 
   knob->tick();
-  sense->update();
+  bool isSenseOn = sense.update();
 
   int newPos = knob->getPosition();
-  bool isSenseOn = sense->isPressed();
 
-  if (sense->changed()) {
+  if (sense.changed) {
     if (isSenseOn) {
       if (!profiling && newPos != 0) {
         newPos = 95;
@@ -165,6 +167,10 @@ void loop() {
     Serial.printf(" duty: %d", duty);
     Serial.println();
 #endif // ENABLE_SERIAL
+  }
+
+  if (newPos == 0) {
+    duty = 0;
   }
 
   ledcWrite(MOTOR_PWM_CHANNEL, duty);
