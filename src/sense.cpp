@@ -1,10 +1,13 @@
 #include "sense.h"
 #include <Arduino.h>
 
-Sense::Sense(int interval, int pin) : _interval(interval), _pin(pin) {}
+Sense::Sense(int interval, int pin) : _interval(interval), _pin(pin) {
+  pinMode(pin, INPUT);
+}
 
 bool Sense::update() {
   unsigned long now = millis();
+  changed = false;
   if (now - _lastCheck >= _interval) {
     bool _state = _readSample();
     changed = _lastState != _state;

@@ -3,6 +3,7 @@
 #include <TinyPICO.h>
 
 #include "knob.h"
+#include "pump.h"
 #include "sense.h"
 
 // #define ENABLE_SERIAL
@@ -16,19 +17,15 @@
 #define PIN_IN1 (25)
 #define PIN_IN2 (26)
 #define PIN_BUTTON (27)
-
 #define SENSE_PIN (4)
 
-// Bounce2::Button *sense = nullptr;
+void debugStates();
+
 Sense sense(1, SENSE_PIN);
 TinyPICO tp = TinyPICO();
 
 int motorMaxDutyCycle = (1 << MOTOR_PWM_BITS) - 1;
-int maxTicks = 60;
-int dutyCyclePerTick =
-    static_cast<int>(static_cast<float>(motorMaxDutyCycle) / maxTicks);
-
-int senseTicks = static_cast<int>(static_cast<float>(maxTicks) * 0.6);
+int maxTicks = 120;
 
 Knob *knob = nullptr;
 IRAM_ATTR void checkPosition() {
@@ -51,127 +48,61 @@ void setup() {
   ledcWrite(MOTOR_PWM_CHANNEL, 0);
 
   pinMode(SENSE_PIN, INPUT);
-  // sense = new Bounce2::Button();
-  // sense->attach(SENSE_PIN, INPUT_PULLUP);
-  // sense->interval(500);
-  // sense->setPressedState(HIGH);
 
   tp.DotStar_SetPower(true);
-  tp.DotStar_SetPixelColor(255, 0, 0);
   tp.DotStar_SetBrightness(126);
-}
 
-#define YEET_TIME 1500
-#define WAIT_TIME 1000
-#define RAMPUP_TIME 10000
-#define HOLD_TIME 5000
-#define DECLINE_TIME 10000
+  // set the dirction
+  digitalWrite(MOTOR_DIR_PIN, LOW);
 
-#define YEET_POWER 40l
-#define HOLD_POWER 60l
-
-int getProfilePosition(long t) {
-  if (t < YEET_TIME) {
-    return YEET_POWER;
-  }
-  t -= YEET_TIME;
-
-  if (t < WAIT_TIME) {
-    return 0;
-  }
-  t -= WAIT_TIME;
-
-  if (t < RAMPUP_TIME) {
-    return min(map(t, 0, RAMPUP_TIME, 0, HOLD_POWER), HOLD_POWER);
-  }
-  t -= RAMPUP_TIME;
-
-  if (t < HOLD_TIME) {
-    return HOLD_POWER;
-  }
-  t -= HOLD_TIME;
-
-  return max(map(t, 0, DECLINE_TIME, HOLD_POWER, 0), 0l);
+  Pump::start();
+  Pump::setMaxDutyCycle(motorMaxDutyCycle);
 }
 
 void loop() {
-  static int duty = 0;
-  static int pos = 0;
-  static long profilingStart = 0;
-  static bool profiling = false;
+  Tick tick;
+  tick.now = millis();
 
-  digitalWrite(MOTOR_DIR_PIN, LOW);
+  static int currentKnobPosition = 0;
 
   knob->tick();
-  bool isSenseOn = sense.update();
+  sense.update();
 
-  int newPos = knob->getPosition();
+  if (knob->getPosition() != currentKnobPosition) {
+    currentKnobPosition = knob->getPosition();
+    KnobChange knobChange;
+    knobChange.max = maxTicks;
+    knobChange.position = currentKnobPosition;
+    Pump::dispatch(knobChange);
+  }
 
   if (sense.changed) {
-    if (isSenseOn) {
-      if (!profiling && newPos != 0) {
-        newPos = 95;
-        knob->setPosition(95);
-      } else {
-        profilingStart = millis();
-        profiling = true;
-      }
+    if (sense.isOn()) {
+      Pump::dispatch(SenseOn());
     } else {
-      newPos = 0;
+      currentKnobPosition = 0;
       knob->setPosition(0);
-      profiling = false;
+      Pump::dispatch(SenseOff());
     }
   }
 
   if (knob->button->pressed()) {
-    if (profiling || newPos != 0) {
-      newPos = 0;
-      knob->setPosition(0);
-      profiling = false;
-    } else {
-      profilingStart = millis();
-      profiling = true;
-    }
+    Pump::dispatch(KnobPress());
   }
 
-  if (profiling) {
-    newPos = getProfilePosition(millis() - profilingStart);
-    knob->setPosition(newPos);
-  }
+  Pump::dispatch(tick);
 
-  if (isSenseOn) {
-    if (profiling) {
-      tp.DotStar_SetPixelColor(0, 255, 255);
-    } else {
-      tp.DotStar_SetPixelColor(0, 0, 255);
-    }
-  } else if (profiling) {
-    tp.DotStar_SetPixelColor(0, 255, 0);
-  } else if (newPos != 0) {
-    tp.DotStar_SetPixelColor(255, 255, 0);
-  } else {
+  debugStates();
+
+  ledcWrite(MOTOR_PWM_CHANNEL, Pump::getDutyCycle());
+}
+
+void debugStates() {
+  if (Pump::is_in_state<Idle>()) {
+    tp.DotStar_SetPixelColor(255, 255, 255);
+  } else if (Pump::is_in_state<Profiling>()) {
     tp.DotStar_SetPixelColor(255, 0, 0);
+  } else if (Pump::is_in_state<Manual>()) {
+    tp.DotStar_SetPixelColor(0, 255, 0);
   }
-
-  if (pos != newPos) {
-#ifdef ENABLE_SERIAL
-    Serial.print("pos:");
-    Serial.print(newPos);
-    Serial.print(" dir:");
-    Serial.print((knob->getDirection()));
-#endif // ENABLE_SERIAL
-    pos = newPos;
-    duty = min(max(pos, 0) * dutyCyclePerTick, motorMaxDutyCycle);
-
-#ifdef ENABLE_SERIAL
-    Serial.printf(" duty: %d", duty);
-    Serial.println();
-#endif // ENABLE_SERIAL
-  }
-
-  if (newPos == 0) {
-    duty = 0;
-  }
-
-  ledcWrite(MOTOR_PWM_CHANNEL, duty);
 }
