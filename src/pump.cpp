@@ -9,8 +9,8 @@
 #define HOLD_TIME 5000
 #define DECLINE_TIME 10000
 
-#define YEET_POWER 40l
-#define HOLD_POWER 60l
+#define YEET_POWER 60l
+#define HOLD_POWER 95l
 
 int getProfilePosition(long t) {
   if (t < YEET_TIME) {

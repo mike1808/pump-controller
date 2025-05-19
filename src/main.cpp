@@ -47,7 +47,6 @@ void setup() {
   ledcAttachPin(MOTOR_PWM_PIN, MOTOR_PWM_CHANNEL);
   ledcWrite(MOTOR_PWM_CHANNEL, 0);
 
-  pinMode(SENSE_PIN, INPUT);
 
   tp.DotStar_SetPower(true);
   tp.DotStar_SetBrightness(126);
